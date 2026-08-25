@@ -17,6 +17,12 @@ WinAnsiEncoding, ktoré NEPODPORUJE viaceré české/slovenské znaky (č, ř, �
 bundluje aj matplotlib), zaregistrovaný nižšie a použitý vo všetkých
 štýloch namiesto default Helvetiky.
 
+Fonty sú v repozitári uložené ako Base64 text (`.ttf.b64`), nie ako
+binárne `.ttf` súbory - pri kopírovaní do Bitbucketu cez webové UI
+("vytvor súbor + vlož text") sa binárny súbor vložiť nedá, Base64 text
+áno. Pri štarte appky sa preto `.ttf.b64` dekóduje do dočasného súboru a
+až ten sa zaregistruje v reportlab (viď `_register_font_from_b64`).
+
 Pôdorys: vie sa vykresliť len rastrový obrázok (PNG/JPEG/GIF/WEBP) stiahnutý
 cez httpx. SVG pôdorys (napr. Skanska) reportlab/Pillow bez ďalšej
 knižnice (napr. `svglib`) priamo nevykreslí - v takom prípade sa namiesto
@@ -25,9 +31,11 @@ pôvodnej verzii.
 """
 from __future__ import annotations
 
+import base64
 import html
 import io
 import ssl
+import tempfile
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -44,8 +52,23 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 _FONTS_DIR = Path(__file__).resolve().parent / "fonts"
-pdfmetrics.registerFont(TTFont("DejaVuSans", str(_FONTS_DIR / "DejaVuSans.ttf")))
-pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", str(_FONTS_DIR / "DejaVuSans-Bold.ttf")))
+
+
+def _register_font_from_b64(font_name: str, b64_filename: str) -> None:
+    """Dekóduje `main/fonts/<b64_filename>` (Base64 text) do dočasného
+    `.ttf` súboru a zaregistruje ho v reportlab pod `font_name`. Fonty sa
+    v repozitári držia ako text (nie binárka), aby sa dali skopírovať aj
+    cez webové UI, ktoré neumožňuje nahratie binárneho súboru (viď
+    docstring modulu)."""
+    raw_bytes = base64.b64decode((_FONTS_DIR / b64_filename).read_bytes())
+    tmp = tempfile.NamedTemporaryFile(suffix=".ttf", delete=False)
+    tmp.write(raw_bytes)
+    tmp.close()
+    pdfmetrics.registerFont(TTFont(font_name, tmp.name))
+
+
+_register_font_from_b64("DejaVuSans", "DejaVuSans.ttf.b64")
+_register_font_from_b64("DejaVuSans-Bold", "DejaVuSans-Bold.ttf.b64")
 
 _TEXT = colors.HexColor("#1c2126")
 _MUTED = colors.HexColor("#5b6570")
