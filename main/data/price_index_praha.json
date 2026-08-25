@@ -1,0 +1,27 @@
+{
+  "_POZNAMKA": "PLACEHOLDER hodnoty (Kč/m², orientačne, bez DPH) - NIE oficiálny cenový index. Slúžia len na to, aby cenový-index odhad v appke fungoval end-to-end, kým sa nedoplní reálny zdroj (napr. ČSÚ, cenová mapa developera/banky). Kľúče sú buď 'Praha N' (mestský obvod), alebo bežný názov mestskej časti tak, ako ho uvádzajú developeri - vyhľadávanie (price_index.py) skúša oba tvary a je necitlivé na diakritiku/veľkosť písmen.",
+
+  "Praha 1": 260000,
+  "Praha 2": 220000,
+  "Praha 3": 190000,
+  "Praha 4": 175000,
+  "Praha 5": 195000,
+  "Praha 6": 200000,
+  "Praha 7": 205000,
+  "Praha 8": 180000,
+  "Praha 9": 165000,
+  "Praha 10": 170000,
+  "Praha 12": 160000,
+  "Praha 19": 155000,
+
+  "Smíchov": 195000,
+  "Žižkov": 190000,
+  "Vinohrady": 215000,
+  "Karlín": 210000,
+  "Holešovice": 200000,
+  "Kamýk": 160000,
+  "Hostivař": 155000,
+  "Strašnice": 165000,
+  "Řeporyje": 145000,
+  "Malešice": 170000
+}

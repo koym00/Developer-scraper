@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byty Scraper</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card-bg: #ffffff;
+    --border: #dde1e6;
+    --text: #1c2126;
+    --muted: #5b6570;
+    --accent: #1a5fb4;
+    --accent-hover: #164d94;
+    --ok: #1f7a3d;
+    --warn: #a15c00;
+    --error: #b3261e;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 20px 24px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  main {
+    max-width: 900px;
+    margin: 24px auto;
+    padding: 0 16px 48px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h2 { margin: 0 0 14px; font-size: 16px; }
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  select, input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fff;
+    color: var(--text);
+  }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  button {
+    padding: 9px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.secondary { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+  button.secondary:hover { background: #eef3fb; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .status-line { font-size: 13px; color: var(--muted); min-height: 18px; }
+  .status-line.error { color: var(--error); }
+  .status-line.ok { color: var(--ok); }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  dl.fact-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 14px; }
+  dl.fact-list dt { color: var(--muted); }
+  dl.fact-list dd { margin: 0; font-weight: 500; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.volny { background: #e3f4e9; color: var(--ok); }
+  .badge.rezervovany { background: #fdf0d5; color: var(--warn); }
+  .badge.predany { background: #f7dedc; color: var(--error); }
+  .badge.neznamy { background: #eceef1; color: var(--muted); }
+
+  .result-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .result-header h2 { margin: 0; }
+  a.pdf-export-link {
+    flex-shrink: 0; padding: 6px 12px; border: 1px solid var(--accent); border-radius: 6px;
+    color: var(--accent); text-decoration: none; font-size: 13px; white-space: nowrap;
+  }
+  a.pdf-export-link:hover { background: #eef3fb; }
+
+  #detail-link-row { margin: -6px 0 14px; }
+  a.detail-link { color: var(--accent); font-size: 14px; text-decoration: none; }
+  a.detail-link:hover { text-decoration: underline; }
+
+  .plan-preview img { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; }
+  .plan-preview a.pdf-link {
+    display: inline-block; padding: 8px 12px; border: 1px solid var(--accent);
+    border-radius: 6px; color: var(--accent); text-decoration: none; font-size: 14px;
+  }
+
+  .rooms-block { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+  .rooms-block .method { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 8px; }
+  table.rooms-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.rooms-table td { padding: 4px 8px 4px 0; }
+  table.rooms-table td:last-child { text-align: right; font-weight: 500; white-space: nowrap; }
+  table.rooms-table tr:not(:last-child) td { border-bottom: 1px solid var(--border); }
+
+  .price-block { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+  .price-block .amount { font-size: 22px; font-weight: 700; }
+  .price-block .method { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .price-block ul.notes { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+  .price-block ul.notes li { margin-bottom: 3px; }
+
+  #results { display: none; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Byty Scraper</h1>
+  <p>Vyhledej konkrétní bytovou jednotku podle developera, projektu a čísla bytu.</p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Vyhledávání</h2>
+    <div class="form-row">
+      <div>
+        <label for="developer">Developer</label>
+        <select id="developer"></select>
+      </div>
+      <div>
+        <label for="project-name">Název projektu (přesný, jako u developera)</label>
+        <input id="project-name" type="text" list="project-suggestions" placeholder="např. Ekocity Hostivar A" autocomplete="off">
+        <datalist id="project-suggestions"></datalist>
+        <div class="hint" id="project-hint"></div>
+      </div>
+      <div>
+        <label for="unit-number">Číslo bytu</label>
+        <input id="unit-number" type="text" list="unit-suggestions" placeholder="např. 161" autocomplete="off">
+        <datalist id="unit-suggestions"></datalist>
+        <div class="hint" id="unit-hint"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="search-btn">Vyhledat</button>
+      <button id="refresh-btn" class="secondary">Obnovit data developera</button>
+      <span class="status-line" id="status-line"></span>
+    </div>
+  </section>
+
+  <section class="card" id="results">
+    <div class="result-header">
+      <h2>Byt <span id="result-title"></span></h2>
+      <a id="pdf-export-link" class="pdf-export-link" href="#" target="_blank" rel="noopener">Exportovat do PDF ⭳</a>
+    </div>
+    <div id="detail-link-row"></div>
+    <div class="grid-2">
+      <div>
+        <dl class="fact-list" id="fact-list"></dl>
+        <div class="hint" id="usable-area-note"></div>
+      </div>
+      <div class="plan-preview" id="plan-preview"></div>
+    </div>
+
+    <div class="rooms-block" id="rooms-block" style="display:none">
+      <div class="method">Rozložení místností</div>
+      <div id="rooms-list"></div>
+    </div>
+
+    <div class="price-block">
+      <div class="method">Odhad ceny (porovnání v rámci projektu)</div>
+      <div id="price-estimate"></div>
+    </div>
+
+    <div class="price-block" id="index-estimate-block" style="display:none">
+      <div class="method">Odhad podle cenového indexu lokality</div>
+      <div id="index-estimate"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = "";
+
+async function loadDevelopers() {
+  const res = await fetch(`${API}/developers`);
+  const developers = await res.json();
+  const select = document.getElementById("developer");
+  select.innerHTML = developers.map(d => `<option value="${d}">${d}</option>`).join("");
+}
+
+function clearUnitField() {
+  document.getElementById("unit-number").value = "";
+  document.getElementById("unit-suggestions").innerHTML = "";
+  document.getElementById("unit-hint").textContent = "";
+}
+
+function clearProjectAndUnitFields() {
+  document.getElementById("project-name").value = "";
+  document.getElementById("project-hint").textContent = "";
+  clearUnitField();
+}
+
+async function loadProjectSuggestions() {
+  const developer = document.getElementById("developer").value;
+  const hint = document.getElementById("project-hint");
+  try {
+    const res = await fetch(`${API}/units?developer=${encodeURIComponent(developer)}`);
+    const units = await res.json();
+    const names = [...new Set(units.map(u => u.project_name))].sort();
+    document.getElementById("project-suggestions").innerHTML =
+      names.map(n => `<option value="${n}"></option>`).join("");
+    hint.textContent = names.length
+      ? `${names.length} projektů v cache (klikni do pole pro nápovědu).`
+      : "Zatím žádná data v cache - zkus nejprve 'Obnovit data developera'.";
+    // Nový developer -> nápoveda čísla bytu z predošlého projektu už neplatí.
+    document.getElementById("unit-suggestions").innerHTML = "";
+    document.getElementById("unit-hint").textContent = "";
+  } catch (e) {
+    hint.textContent = "";
+  }
+}
+
+async function loadUnitSuggestions() {
+  const developer = document.getElementById("developer").value;
+  const projectName = document.getElementById("project-name").value.trim();
+  const hint = document.getElementById("unit-hint");
+  if (!projectName) {
+    document.getElementById("unit-suggestions").innerHTML = "";
+    hint.textContent = "";
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ developer, project_name: projectName });
+    const res = await fetch(`${API}/units?${params}`);
+    const units = await res.json();
+    const numbers = [...new Set(units.map(u => u.unit_number))].sort();
+    document.getElementById("unit-suggestions").innerHTML =
+      numbers.map(n => `<option value="${n}"></option>`).join("");
+    hint.textContent = numbers.length
+      ? `${numbers.length} bytů v tomto projektu v cache.`
+      : "Pro tento projekt zatím nic v cache - zkontroluj přesný název nebo obnov data.";
+  } catch (e) {
+    hint.textContent = "";
+  }
+}
+
+let unitSuggestionsTimer = null;
+function scheduleUnitSuggestions() {
+  clearTimeout(unitSuggestionsTimer);
+  unitSuggestionsTimer = setTimeout(loadUnitSuggestions, 300);
+}
+
+function setStatus(message, kind) {
+  const el = document.getElementById("status-line");
+  el.textContent = message || "";
+  el.className = "status-line" + (kind ? " " + kind : "");
+}
+
+function statusBadge(status) {
+  const labels = {
+    volny: "Volný", rezervovany: "Rezervovaný", predany: "Prodaný", neznamy: "Neznámý",
+  };
+  return `<span class="badge ${status}">${labels[status] || status}</span>`;
+}
+
+function normalizeFeature(text) {
+  // developeri kódujú vlastnosti nekonzistentne - raz bez diakritiky
+  // ("balkon"), raz s ňou ("balkón") - preto sa porovnáva po odstránení
+  // diakritiky, nie na presnú zhodu reťazca.
+  return (text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function hasFeature(features, name) {
+  const target = normalizeFeature(name);
+  return !!(features && features.some(f => normalizeFeature(f) === target));
+}
+
+function hasAnyFeature(features, names) {
+  return names.some(name => hasFeature(features, name));
+}
+
+function outdoorAreaDisplay(unit) {
+  if (unit.outdoor_area_m2 == null) return "—";
+  return `${unit.outdoor_area_m2} m²`;
+}
+
+// Plochu KONKRÉTNEHO vonkajšieho priestoru (na rozdiel od súčtu v
+// outdoor_area_m2) má zatiaľ len Ekospol a Finep (unit.outdoor_area_by_type).
+// `keys` môže byť viac synoným pre to isté (napr. "zahrada"/"zahradka" -
+// rôzne developeri normalizujú inak) - vezme sa prvá nájdená plocha.
+function outdoorTypeDisplay(unit, keys) {
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  const byType = unit.outdoor_area_by_type || {};
+  for (const key of keyList) {
+    if (byType[key] != null) return `${byType[key]} m²`;
+  }
+  return hasAnyFeature(unit.features, keyList) ? "Ano (plocha neuvedena)" : "Ne";
+}
+
+// Užitná plocha - v poradí priority:
+//  1. priamo od developera (unit.usable_area_m2 - Central Group `innerFloorArea`,
+//     Skanska "Užitná plocha" na detaile bytu) - autoritatívna hodnota, žiadna hviezdička.
+//  2. súčet plôch VNÚTORNÝCH miestností z rozpisu (bez vonkajších priestorov
+//     ako terasa/balkón - tie by ju umelo nafúkli nad podlahovú plochu, viď
+//     napr. Central Group H195: rozpis má aj "Terasa", ktorá do užitnej
+//     plochy bytu nepatrí).
+//  3. odhad ako podlahová plocha − 5 % (bežný pomer spôsobený hrúbkou nosných/
+//     deliacich stien), keď appka nemá ani priamu hodnotu, ani rozpis miestností
+//     (Finep/Sekyra, alebo lazy dotiahnutie zlyhalo) - označí sa "*" a vysvetlí
+//     sa pod výpisom.
+const OUTDOOR_ROOM_KEYWORDS = ["balkon", "terasa", "predzahradka", "zahrada", "zahradka", "lodzie"];
+
+function isOutdoorRoomName(name) {
+  const normalized = normalizeFeature(name || "");
+  return OUTDOOR_ROOM_KEYWORDS.some(kw => normalized.includes(kw));
+}
+
+function usableAreaInfo(unit) {
+  if (unit.usable_area_m2 != null) {
+    return { text: `${unit.usable_area_m2} m²`, estimated: false };
+  }
+  const indoorRooms = (unit.rooms || []).filter(r => !isOutdoorRoomName(r.name));
+  if (indoorRooms.length) {
+    const sum = indoorRooms.reduce((acc, r) => acc + (r.area_m2 || 0), 0);
+    return { text: `${Math.round(sum * 10) / 10} m²`, estimated: false };
+  }
+  if (unit.area_m2 != null) {
+    const estimated = Math.round(unit.area_m2 * 0.95 * 10) / 10;
+    return { text: `${estimated} m² *`, estimated: true };
+  }
+  return { text: "—", estimated: false };
+}
+
+function garageDisplay(unit) {
+  if (unit.garage_price_czk != null) {
+    return unit.garage_price_czk.toLocaleString("cs-CZ") + " Kč";
+  }
+  // cenu garáže/parkovania samostatne od bytu má zatiaľ len Ekospol -
+  // pri ostatných developeroch, kde je to len flag vo features, ostáva
+  // Áno/Nie (cena nie je k dispozícii).
+  return hasFeature(unit.features, "parkovani") ? "Ano (cena neuvedena)" : "Ne";
+}
+
+function renderFacts(unit) {
+  const usableArea = usableAreaInfo(unit);
+  const rows = [
+    ["Projekt", unit.project_name],
+    ["Podlaží", unit.floor ?? "—"],
+    ["Dispozice", unit.disposition ?? "—"],
+    ["Podlahová plocha", unit.area_m2 != null ? `${unit.area_m2} m²` : "—"],
+    ["Užitná plocha", usableArea.text],
+    ["Venkovní prostory celkem", outdoorAreaDisplay(unit)],
+    ["Balkon", outdoorTypeDisplay(unit, "balkon")],
+    ["Terasa", outdoorTypeDisplay(unit, "terasa")],
+    ["Předzahrádka", outdoorTypeDisplay(unit, "predzahradka")],
+    ["Zahrada", outdoorTypeDisplay(unit, ["zahrada", "zahradka"])],
+    ["Lodžie", outdoorTypeDisplay(unit, "lodzie")],
+    ["Příslušenství", unit.features && unit.features.length ? unit.features.join(", ") : "—"],
+    ["Garáž/parkovací stání", garageDisplay(unit)],
+    // "sklep" (pivnica) a "komora" (Finep) sú rôzne pojmy, ale pre
+    // používateľa ide o rovnakú otázku "má byt úložný priestor navyše?" -
+    // preto jeden spoločný riadok, nie dva.
+    ["Úložný prostor (sklep/komora)", hasAnyFeature(unit.features, ["sklep", "komora"]) ? "Ano" : "Ne"],
+    ["Lokalita", unit.locality ?? "—"],
+    ["Stav", statusBadge(unit.status)],
+    ["Nastěhování", unit.move_in_date ?? "—"],
+    ["Zveřejněná cena", unit.published_price_czk != null
+      ? unit.published_price_czk.toLocaleString("cs-CZ") + " Kč"
+      : (unit.price_note || "na dotaz")],
+  ];
+  document.getElementById("fact-list").innerHTML = rows
+    .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
+    .join("");
+  document.getElementById("usable-area-note").textContent = usableArea.estimated
+    ? "* Užitná plocha je odhad (podlahová plocha − 5 %), protože rozpis místností není k dispozici."
+    : "";
+}
+
+function renderPlan(unit) {
+  const el = document.getElementById("plan-preview");
+  if (!unit.plan_url) {
+    el.innerHTML = `<p class="hint">Půdorys/obrázek není k dispozici.</p>`;
+    return;
+  }
+  // Nie každý developer dáva obrázkovú príponu do URL (niektorí servírujú
+  // PDF na URL bez ".pdf" na konci, cez Content-Disposition) - preto sa
+  // ako <img> vykreslí len vtedy, keď je prípona jednoznačne obrázková;
+  // inak sa ponúkne len odkaz na otvorenie/stiahnutie.
+  const isImage = /\.(png|jpe?g|svg|gif|webp)(\?|$)/i.test(unit.plan_url);
+  if (isImage) {
+    el.innerHTML = `<a href="${unit.plan_url}" target="_blank" rel="noopener">
+        <img src="${unit.plan_url}" alt="Půdorys jednotky" loading="lazy"
+             onerror="this.parentElement.parentElement.innerHTML='<p class=hint>Obrázek se nepodařilo načíst (developer ho mohl odstranit, např. u prodaného bytu).</p>'">
+      </a>`;
+  } else {
+    el.innerHTML = `<a class="pdf-link" href="${unit.plan_url}" target="_blank" rel="noopener">Otevřít/stáhnout půdorys</a>`;
+  }
+}
+
+function renderRooms(unit) {
+  const block = document.getElementById("rooms-block");
+  if (!unit.rooms || !unit.rooms.length) {
+    block.style.display = "none";
+    return;
+  }
+  const rows = unit.rooms
+    .map(r => `<tr><td>${r.name}</td><td>${r.area_m2} m²</td></tr>`)
+    .join("");
+  document.getElementById("rooms-list").innerHTML = `<table class="rooms-table">${rows}</table>`;
+  block.style.display = "block";
+}
+
+function renderEstimate(containerId, estimate) {
+  const methodLabels = {
+    published: "Přímo zveřejněná cena",
+    comparable_avg: "Odhad z porovnatelných bytů v projektu",
+    comparable_market: "Odhad z cenového indexu lokality",
+    unavailable: "Odhad není možný",
+  };
+  const el = document.getElementById(containerId);
+  if (!estimate || estimate.method === "unavailable") {
+    el.innerHTML = `<p class="hint">${(estimate && estimate.notes[0]) || "Odhad není k dispozici."}</p>`;
+    return;
+  }
+  const amount = estimate.estimated_price_czk != null
+    ? estimate.estimated_price_czk.toLocaleString("cs-CZ") + " Kč"
+    : "—";
+  const perM2 = estimate.price_per_m2_used != null
+    ? `${Math.round(estimate.price_per_m2_used).toLocaleString("cs-CZ")} Kč/m²`
+    : "";
+  el.innerHTML = `
+    <div class="amount">${amount}</div>
+    <div class="hint">${methodLabels[estimate.method] || estimate.method}${perM2 ? " · " + perM2 : ""} · důvěra: ${estimate.confidence}</div>
+    <ul class="notes">${(estimate.notes || []).map(n => `<li>${n}</li>`).join("")}</ul>
+  `;
+}
+
+async function search() {
+  const developer = document.getElementById("developer").value;
+  const projectName = document.getElementById("project-name").value.trim();
+  const unitNumber = document.getElementById("unit-number").value.trim();
+
+  if (!projectName || !unitNumber) {
+    setStatus("Zadej název projektu i číslo bytu.", "error");
+    return;
+  }
+
+  setStatus("Hledám (při prvním dotazu může scraper trvat déle)...");
+  document.getElementById("results").style.display = "none";
+  document.getElementById("search-btn").disabled = true;
+
+  try {
+    const params = new URLSearchParams({ developer, project_name: projectName, unit_number: unitNumber });
+    const res = await fetch(`${API}/unit?${params}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Chyba ${res.status}`);
+    }
+    const data = await res.json();
+
+    document.getElementById("pdf-export-link").href = `${API}/unit/pdf?${params}`;
+    document.getElementById("result-title").textContent = `${data.unit.unit_number} — ${data.unit.project_name}`;
+    document.getElementById("detail-link-row").innerHTML = data.unit.detail_url
+      ? `<a class="detail-link" href="${data.unit.detail_url}" target="_blank" rel="noopener">Zobrazit na stránce developera ↗</a>`
+      : `<p class="hint">Odkaz na stránku tohoto bytu u developera není k dispozici.</p>`;
+    renderFacts(data.unit);
+    renderPlan(data.unit);
+    renderRooms(data.unit);
+    renderEstimate("price-estimate", data.price_estimate);
+
+    const indexBlock = document.getElementById("index-estimate-block");
+    if (data.index_price_estimate) {
+      indexBlock.style.display = "block";
+      renderEstimate("index-estimate", data.index_price_estimate);
+    } else {
+      indexBlock.style.display = "none";
+    }
+
+    document.getElementById("results").style.display = "block";
+    setStatus("Nalezeno.", "ok");
+  } catch (e) {
+    setStatus(e.message, "error");
+  } finally {
+    document.getElementById("search-btn").disabled = false;
+  }
+}
+
+async function refreshDeveloper() {
+  const developer = document.getElementById("developer").value;
+  setStatus(`Obnovuji data pro ${developer} (může trvat i desítky sekund)...`);
+  document.getElementById("refresh-btn").disabled = true;
+  try {
+    const res = await fetch(`${API}/refresh/${encodeURIComponent(developer)}`, { method: "POST" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Chyba ${res.status}`);
+    }
+    const data = await res.json();
+    setStatus(`Hotovo - ${data.units_upserted} bytů v cache.`, "ok");
+    await loadProjectSuggestions();
+    loadUnitSuggestions();
+  } catch (e) {
+    setStatus(e.message, "error");
+  } finally {
+    document.getElementById("refresh-btn").disabled = false;
+  }
+}
+
+document.getElementById("search-btn").addEventListener("click", search);
+document.getElementById("refresh-btn").addEventListener("click", refreshDeveloper);
+document.getElementById("developer").addEventListener("change", () => {
+  // Zmena developera -> predtým vyplnený projekt/číslo bytu patria inému
+  // developerovi, takže už nedávajú zmysel - vyprázdniť oboje.
+  clearProjectAndUnitFields();
+  loadProjectSuggestions();
+});
+document.getElementById("unit-number").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+document.getElementById("project-name").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+document.getElementById("project-name").addEventListener("input", () => {
+  // Zmena názvu projektu -> predtým vyplnené číslo bytu patrí inému
+  // projektu, takže už nedáva zmysel - vyprázdniť ho.
+  clearUnitField();
+  scheduleUnitSuggestions();
+});
+
+// Klik/focus do poľa, ktoré už má vyplnenú hodnotu (napr. z predošlého
+// hľadania), rovno označí celý text - stačí začať písať a starý názov sa
+// prepíše, netreba ho najprv ručne mazať.
+for (const id of ["project-name", "unit-number"]) {
+  document.getElementById(id).addEventListener("focus", e => e.target.select());
+}
+
+loadDevelopers().then(loadProjectSuggestions);
+</script>
+
+</body>
+</html>
