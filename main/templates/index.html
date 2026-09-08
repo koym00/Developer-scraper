@@ -131,6 +131,22 @@
 
   #results { display: none; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* Vlastný (nie natívny <datalist>) rozbaľovací zoznam návrhov - natívny
+     <datalist> nedáva appke žiadnu kontrolu nad veľkosťou/scrollovaním a
+     pri desiatkach až stovkách položiek (napr. Ekospol má projekty so
+     125-192 bytmi) sa v niektorých prostrediach vôbec nedá scrollovať. */
+  .ac-wrapper { position: relative; }
+  .ac-panel {
+    position: absolute; top: 100%; left: 0; right: 0; margin-top: 2px;
+    background: #fff; border: 1px solid var(--border); border-radius: 6px;
+    max-height: 220px; overflow-y: auto; z-index: 20;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    display: none;
+  }
+  .ac-item { padding: 7px 10px; font-size: 14px; cursor: pointer; }
+  .ac-item:hover, .ac-item.active { background: #eef3fb; }
+  .ac-empty { padding: 7px 10px; font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -150,14 +166,18 @@
       </div>
       <div>
         <label for="project-name">Název projektu (přesný, jako u developera)</label>
-        <input id="project-name" type="text" list="project-suggestions" placeholder="např. Ekocity Hostivar A" autocomplete="off">
-        <datalist id="project-suggestions"></datalist>
+        <div class="ac-wrapper">
+          <input id="project-name" type="text" placeholder="např. Ekocity Hostivar A" autocomplete="off">
+          <div class="ac-panel" id="project-name-panel"></div>
+        </div>
         <div class="hint" id="project-hint"></div>
       </div>
       <div>
         <label for="unit-number">Číslo bytu</label>
-        <input id="unit-number" type="text" list="unit-suggestions" placeholder="např. 161" autocomplete="off">
-        <datalist id="unit-suggestions"></datalist>
+        <div class="ac-wrapper">
+          <input id="unit-number" type="text" placeholder="např. 161" autocomplete="off">
+          <div class="ac-panel" id="unit-number-panel"></div>
+        </div>
         <div class="hint" id="unit-hint"></div>
       </div>
     </div>
@@ -209,14 +229,120 @@ async function loadDevelopers() {
   select.innerHTML = developers.map(d => `<option value="${d}">${d}</option>`).join("");
 }
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text ?? "";
+  return div.innerHTML;
+}
+
+// Vlastný rozbaľovací zoznam návrhov namiesto natívneho <datalist> - ten
+// nedáva appke kontrolu nad veľkosťou/scrollovaním, čo pri desiatkach až
+// stovkách položiek (napr. Ekospol má projekty so 125-192 bytmi) robí
+// zoznam nepoužiteľným (nedá sa v ňom scrollovať). Filtruje "obsahuje"
+// (nie len prefix ako natívny datalist), podporuje šípky/Enter/Escape.
+function createAutocomplete(input, panel, { onEnterFallback } = {}) {
+  let items = [];
+  let filtered = [];
+  let activeIndex = -1;
+
+  function close() {
+    panel.style.display = "none";
+    panel.innerHTML = "";
+    activeIndex = -1;
+  }
+
+  function highlight() {
+    Array.from(panel.children).forEach((el, i) => el.classList.toggle("active", i === activeIndex));
+    const activeEl = panel.children[activeIndex];
+    if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
+  }
+
+  function render() {
+    const query = input.value.trim().toLowerCase();
+    filtered = query ? items.filter(i => i.toLowerCase().includes(query)) : items;
+    activeIndex = -1;
+    if (!filtered.length) {
+      close();
+      return;
+    }
+    panel.innerHTML = filtered
+      .map(item => `<div class="ac-item" data-value="${escapeHtml(item)}">${escapeHtml(item)}</div>`)
+      .join("");
+    panel.style.display = "block";
+  }
+
+  function select(value) {
+    input.value = value;
+    close();
+    // Nech sa spustia existujúce listenery na "input" (napr. dotiahnutie
+    // návrhov čísla bytu po výbere projektu).
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  input.addEventListener("input", render);
+  input.addEventListener("focus", render);
+  input.addEventListener("blur", () => setTimeout(close, 150)); // oneskorenie nech stihne prejsť klik na položku
+  input.addEventListener("keydown", e => {
+    if (panel.style.display === "block" && filtered.length) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        activeIndex = Math.min(activeIndex + 1, filtered.length - 1);
+        highlight();
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        activeIndex = Math.max(activeIndex - 1, 0);
+        highlight();
+        return;
+      }
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      if (e.key === "Enter" && activeIndex >= 0) {
+        e.preventDefault();
+        select(filtered[activeIndex]);
+        return;
+      }
+    }
+    if (e.key === "Enter" && onEnterFallback) {
+      onEnterFallback();
+    }
+  });
+  panel.addEventListener("mousedown", e => {
+    const item = e.target.closest(".ac-item");
+    if (item) {
+      e.preventDefault(); // zabráni strate focusu z inputu pred kliknutím
+      select(item.dataset.value);
+    }
+  });
+
+  return {
+    setItems(newItems) { items = newItems; },
+  };
+}
+
+const projectAutocomplete = createAutocomplete(
+  document.getElementById("project-name"),
+  document.getElementById("project-name-panel"),
+  { onEnterFallback: search }
+);
+const unitAutocomplete = createAutocomplete(
+  document.getElementById("unit-number"),
+  document.getElementById("unit-number-panel"),
+  { onEnterFallback: search }
+);
+
 function clearUnitField() {
   document.getElementById("unit-number").value = "";
-  document.getElementById("unit-suggestions").innerHTML = "";
+  unitAutocomplete.setItems([]);
   document.getElementById("unit-hint").textContent = "";
 }
 
 function clearProjectAndUnitFields() {
   document.getElementById("project-name").value = "";
+  projectAutocomplete.setItems([]);
   document.getElementById("project-hint").textContent = "";
   clearUnitField();
 }
@@ -228,13 +354,12 @@ async function loadProjectSuggestions() {
     const res = await fetch(`${API}/units?developer=${encodeURIComponent(developer)}`);
     const units = await res.json();
     const names = [...new Set(units.map(u => u.project_name))].sort();
-    document.getElementById("project-suggestions").innerHTML =
-      names.map(n => `<option value="${n}"></option>`).join("");
+    projectAutocomplete.setItems(names);
     hint.textContent = names.length
       ? `${names.length} projektů v cache (klikni do pole pro nápovědu).`
       : "Zatím žádná data v cache - zkus nejprve 'Obnovit data developera'.";
     // Nový developer -> nápoveda čísla bytu z predošlého projektu už neplatí.
-    document.getElementById("unit-suggestions").innerHTML = "";
+    unitAutocomplete.setItems([]);
     document.getElementById("unit-hint").textContent = "";
   } catch (e) {
     hint.textContent = "";
@@ -246,7 +371,7 @@ async function loadUnitSuggestions() {
   const projectName = document.getElementById("project-name").value.trim();
   const hint = document.getElementById("unit-hint");
   if (!projectName) {
-    document.getElementById("unit-suggestions").innerHTML = "";
+    unitAutocomplete.setItems([]);
     hint.textContent = "";
     return;
   }
@@ -255,8 +380,7 @@ async function loadUnitSuggestions() {
     const res = await fetch(`${API}/units?${params}`);
     const units = await res.json();
     const numbers = [...new Set(units.map(u => u.unit_number))].sort();
-    document.getElementById("unit-suggestions").innerHTML =
-      numbers.map(n => `<option value="${n}"></option>`).join("");
+    unitAutocomplete.setItems(numbers);
     hint.textContent = numbers.length
       ? `${numbers.length} bytů v tomto projektu v cache.`
       : "Pro tento projekt zatím nic v cache - zkontroluj přesný název nebo obnov data.";
@@ -535,8 +659,8 @@ document.getElementById("developer").addEventListener("change", () => {
   clearProjectAndUnitFields();
   loadProjectSuggestions();
 });
-document.getElementById("unit-number").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
-document.getElementById("project-name").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+// Enter na "Vyhledat" rieši createAutocomplete (onEnterFallback) - keď je
+// rozbaľovací panel otvorený s vybranou položkou, Enter najprv potvrdí ju.
 document.getElementById("project-name").addEventListener("input", () => {
   // Zmena názvu projektu -> predtým vyplnené číslo bytu patrí inému
   // projektu, takže už nedáva zmysel - vyprázdniť ho.
