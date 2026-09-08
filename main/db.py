@@ -68,6 +68,14 @@ class UnitRecord(Base):
     # neposkytuje" (netreba skúšať znova pri každom ďalšom vyhľadaní).
     # Doplnené 2026-09 pre Skanska (viď skanska.py, needs_extra_details).
     rooms_unavailable: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Interný príznak - či bol plan_url už overený/opravený proti skutočnej
+    # galérii na detaile bytu (viď skanska.py, fetch_extra_details_for_unit).
+    # Predtým sa plan_url pri Skanske len skladal podľa vzoru
+    # `{code}.svg` bez overenia - naživo sa zistilo (2026-09, nahlásil
+    # používateľ), že tento vzor niekedy ukazuje na fasádu budovy
+    # ("pohled jižní") namiesto skutočného pôdorysu, ktorý je vždy PRVÝ
+    # obrázok v galérii (rel="specs-gallery") na stránke bytu.
+    plan_url_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     usable_area_m2: Mapped[float | None] = mapped_column(Float, nullable=True)
     features: Mapped[list] = mapped_column(JSON, default=list)
     orientation: Mapped[str | None] = mapped_column(String, nullable=True)

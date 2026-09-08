@@ -329,11 +329,34 @@ class SkanskaScraper(BaseScraper):
                 # ďalšom vyhľadaní tohto bytu (viď needs_extra_details).
                 result["rooms_unavailable"] = True
 
+        # plan_url sa v snapshot API len skladá podľa vzoru `{code}.svg`
+        # bez overenia (viď _apartment_to_unit_data) - naživo sa zistilo
+        # (2026-09, nahlásil používateľ), že tento vzor niekedy ukazuje na
+        # DRUHÝ obrázok v skutočnej galérii bytu (pohľad na fasádu budovy,
+        # napr. "pohled jižní"), nie na pôdorys. Skutočný pôdorys je vždy
+        # PRVÝ obrázok v `rel="specs-gallery"` bloku - overené naživo na
+        # 7 bytoch naprieč rôznymi projektmi. Táto stránka je už aj tak
+        # stiahnutá vyššie (kvôli usable_area_m2/orientation/PDF), takže
+        # overenie/oprava plan_url tu nestojí žiadny extra request.
+        gallery_link = soup.select_one('a[rel="specs-gallery"][href]')
+        if gallery_link is not None:
+            gallery_plan_url = gallery_link["href"]
+            if gallery_plan_url:
+                if gallery_plan_url != record.plan_url:
+                    result["plan_url"] = gallery_plan_url
+                result["plan_url_verified"] = True
+
         return result
 
     def needs_extra_details(self, record) -> bool:
         missing_rooms = not record.rooms and not getattr(record, "rooms_unavailable", False)
-        return record.usable_area_m2 is None or not record.orientation or missing_rooms
+        missing_plan_check = not getattr(record, "plan_url_verified", False)
+        return (
+            record.usable_area_m2 is None
+            or not record.orientation
+            or missing_rooms
+            or missing_plan_check
+        )
 
 
 if __name__ == "__main__":
