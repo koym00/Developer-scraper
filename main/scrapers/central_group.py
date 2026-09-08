@@ -118,6 +118,18 @@ _FEATURE_FLAG_MAP = {
     "hasWinterGarden": "zimni_zahrada",
 }
 
+# `/api/apartment/{catalogNumber}` (rovnaký request ako pre `rooms`) má aj
+# samostatné polia s presnou plochou KAŽDÉHO vonkajšieho priestoru podľa
+# typu (napr. "terraces": [{"area": 50.2}, {"area": 17}] - viac terás
+# naraz) - doplnené 2026-09, na podnet používateľa, ktorý si všimol, že na
+# webe developera rozpis vidno, hoci appka predtým vracala len súhrn
+# (`amenitiesArea`, viď `_apartment_to_unit_data`).
+_OUTDOOR_ARRAY_TO_KEY = {
+    "balconies": "balkon",
+    "terraces": "terasa",
+    "frontGardens": "predzahradka",
+}
+
 
 def _apartment_to_unit_data(
     apt: dict, developer: Developer, project_name: str, source_url: str
@@ -326,6 +338,23 @@ class CentralGroupScraper(BaseScraper):
             inner_area = detail.get("innerFloorArea")
             if inner_area:
                 result["usable_area_m2"] = inner_area
+
+            outdoor_area_by_type: dict[str, float] = {}
+            for array_key, type_key in _OUTDOOR_ARRAY_TO_KEY.items():
+                areas = [item.get("area") for item in (detail.get(array_key) or []) if item.get("area")]
+                if areas:
+                    outdoor_area_by_type[type_key] = round(sum(areas), 2)
+            if outdoor_area_by_type:
+                result["outdoor_area_by_type"] = outdoor_area_by_type
+
+            # Cena garáže/parkovacieho státia SAMOSTATNE od ceny bytu (rovnaký
+            # vzor ako pri Ekospole) - predtým appka pri Central Group tvrdila,
+            # že to má len Ekospol, ale je to v tom istom detaile ako `rooms`.
+            garage_prices = [
+                p.get("totalPriceWithVAT") for p in (detail.get("parkingPlaces") or []) if p.get("totalPriceWithVAT")
+            ]
+            if garage_prices:
+                result["garage_price_czk"] = sum(garage_prices)
         return result
 
     def needs_extra_details(self, record) -> bool:
