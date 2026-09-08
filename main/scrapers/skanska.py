@@ -31,11 +31,35 @@ snapshot API ich nemá, ale detail KAŽDÉHO bytu (`listitem` bloky na
 `residential.skanska.cz/.../<code>`) áno - "Užitná plocha" (m²) a
 "Orientace" (napr. "J"). `fetch_extra_details_for_unit()` ich dotiahne
 lenivo, len pre konkrétny vyhľadaný byt (viď `main.py`), nie hromadne.
+
+**Rozpis miestností a plocha vonkajších priestorov (doplnené 2026-09,
+na základe pripomienky používateľa "veď to tam určite je") -** detail
+bytu má odkaz "Tisknout do PDF" (`a.js-print-detail[href]`), ktorý appka
+predtým vôbec nevyužívala. Toto PDF má SKUTOČNÚ textovú vrstvu (nie sken)
+s rozpisom miestností vrátane vonkajších priestorov (napr. "Terasa" /
+"15,0 m²", "Předzahrádka" / "24,3 m²") - presne tie hodnoty, ktoré sa
+predtým skúšali (a zamietli, ~57 % pokrytie, 4+ nekonzistentné formáty)
+získať parsovaním SVG pôdorysu (viď PROJECT_BRIEF.md, sekcia 4C).
+
+Naživo overené na 5 rôznych projektoch/PDF šablónach: **súhrnný riadok**
+na začiatku PDF ("plocha balkonu: X m²") má pri extrakcii textu (`pypdf`)
+niekedy popletené poradie popisiek a hodnôt medzi rôznymi PDF šablónami -
+NEPOUŽÍVA sa preto. Spoľahlivý je namiesto toho **rozpis jednotlivých
+miestností** (názov miestnosti bezprostredne nasledovaný jej plochou) -
+ten je vo všetkých overených vzorkách konzistentný. Miestnosti sa z textu
+vyťahujú regexom (`_ROOM_AREA_RE`) a filtrujú (`_looks_like_real_room`),
+aby sa odstránilo "smetie" z hlavičky/súhrnu PDF (obsahuje čísla ako
+"366/2013" alebo slovo "plocha" - skutočné názvy miestností toto
+neobsahujú). Vonkajšie priestory sa z rozpisu vyfiltrujú podľa kľúčových
+slov (`_OUTDOOR_ROOM_KEYWORDS`), rovnako ako pri iných developeroch.
 """
 from __future__ import annotations
 
+import io
 import logging
+import re
 
+import pypdf
 from bs4 import BeautifulSoup
 
 from main.models import Developer, UnitData, UnitStatus
@@ -47,6 +71,22 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://residential.skanska.cz"
 FILTER_SET_ID = "apartments_page_cs"
 SNAPSHOT_URL = f"{BASE_URL}/api/v1/filters/{FILTER_SET_ID}/snapshot"
+
+# Zachytí "Ložnice13,8 m²" aj "Lodžie\n5,3 m²" (PDF šablóny sa líšia v tom,
+# či je medzi názvom miestnosti a plochou medzera/newline, alebo nič) -
+# neochotné (non-greedy) zachytenie mena, aby sa zastavilo na najbližšom
+# nasledujúcom čísle, nie na poslednom v texte.
+_ROOM_AREA_RE = re.compile(r"([A-Za-zÁ-Žá-ž0-9+()./\s]{2,40}?)(\d+[,.]\d+)\s*m.?")
+
+# normalizovaný (bez diakritiky) fragment v názve miestnosti -> kľúč pre
+# outdoor_area_by_type, rovnaké kľúče ako pri Ekospole/Finepe/FE.
+_OUTDOOR_ROOM_KEYWORDS = {
+    "predzahradka": "predzahradka",
+    "terasa": "terasa",
+    "balkon": "balkon",
+    "lodzie": "lodzie",
+    "zahrada": "zahradka",
+}
 
 # Normalizovaný label z "listitem" bloku na detaile bytu -> náš kľúč.
 # Nájdené 2026-08 (nahlásil používateľ) - detail KAŽDÉHO bytu má okrem
@@ -65,6 +105,64 @@ _STATE_MAP = {
     "empty": UnitStatus.AVAILABLE,
     "registered": UnitStatus.RESERVED,
 }
+
+
+def _looks_like_real_room(name: str) -> bool:
+    """`_ROOM_AREA_RE` okrem skutočných miestností zachytí aj "smetie" z
+    hlavičky/súhrnu PDF (napr. "e NV č. 366/2013 Sb.", "žitná plocha
+    celkem", zvyšky čísel z rozstrihnutého súhrnu) - tie sa dajú spoľahlivo
+    odlíšiť: skutočný názov miestnosti nikdy neobsahuje číslicu ani slovo
+    "plocha", a nie je neprimerane dlhý (odrezok viacerých viet)."""
+    normalized = strip_diacritics_lower_alnum(name)
+    if not normalized:
+        return False
+    if any(ch.isdigit() for ch in name):
+        return False
+    if "plocha" in normalized:
+        return False
+    return len(name) <= 30
+
+
+def _extract_rooms_from_pdf(pdf_bytes: bytes) -> list[dict]:
+    """Vytiahne rozpis miestností (názov + plocha) z textovej vrstvy PDF
+    "Tisknout do PDF" - viď docstring modulu, prečo sa nepoužíva súhrnný
+    riadok hore, ale rozpis jednotlivých miestností."""
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        text = reader.pages[0].extract_text() or ""
+    except Exception as exc:
+        logger.warning("Skanska: nepodarilo sa prečítať PDF pôdorysu (%s)", exc)
+        return []
+
+    rooms: list[dict] = []
+    for raw_name, raw_value in _ROOM_AREA_RE.findall(text):
+        name = raw_name.strip()
+        if "\n" in name:
+            # prvá miestnosť v PDF má pred sebou často prilepenú hlavičku
+            # stránky (adresa projektu, čísla podlaží a pod.) - berie sa
+            # len posledný "riadok" pred hodnotou plochy.
+            name = name.splitlines()[-1].strip()
+        if not _looks_like_real_room(name):
+            continue
+        area = parse_float(raw_value)
+        if area is None:
+            continue
+        rooms.append({"name": name, "area_m2": area})
+    return rooms
+
+
+def _split_outdoor_rooms(rooms: list[dict]) -> tuple[float | None, dict[str, float]]:
+    """Z rozpisu miestností vyfiltruje vonkajšie priestory (terasa/balkón/
+    lodžie/předzahrádka/zahrada) - rovnaké kľúče ako pri Ekospole/Finepe."""
+    outdoor_area_by_type: dict[str, float] = {}
+    for room in rooms:
+        normalized = strip_diacritics_lower_alnum(room["name"])
+        for keyword, key in _OUTDOOR_ROOM_KEYWORDS.items():
+            if keyword in normalized:
+                outdoor_area_by_type[key] = outdoor_area_by_type.get(key, 0.0) + room["area_m2"]
+                break
+    outdoor_area_m2 = round(sum(outdoor_area_by_type.values()), 2) if outdoor_area_by_type else None
+    return outdoor_area_m2, outdoor_area_by_type
 
 
 def _lookup(reference_tables: dict, table_name: str, ids: list) -> str | None:
@@ -166,9 +264,10 @@ class SkanskaScraper(BaseScraper):
     def fetch_extra_details_for_unit(self, record) -> dict:
         """Lazy dotiahnutie polí, ktoré sú len na detaile KONKRÉTNEHO bytu,
         nie v hromadnom snapshot API - užitná plocha a orientácia (viď
-        `_LISTITEM_LABEL_TO_KEY`). Nevolá sa z `fetch_all_units()` (356
-        bytov, zbytočne by to spomalilo hromadný `/refresh` - rovnaký
-        dôvod ako pri Ekospole/Central Group)."""
+        `_LISTITEM_LABEL_TO_KEY`), a rozpis miestností + vonkajšie priestory
+        z "Tisknout do PDF" odkazu (viď docstring modulu). Nevolá sa z
+        `fetch_all_units()` (356 bytov, zbytočne by to spomalilo hromadný
+        `/refresh` - rovnaký dôvod ako pri Ekospole/Central Group)."""
         detail_url = record.detail_url
         if not detail_url:
             return {}
@@ -197,10 +296,26 @@ class SkanskaScraper(BaseScraper):
                     result[key] = area
             elif key == "orientation" and text:
                 result[key] = text
+
+        pdf_link = soup.select_one("a.js-print-detail[href]")
+        if pdf_link is not None:
+            try:
+                pdf_resp = self._get(pdf_link["href"])
+                rooms = _extract_rooms_from_pdf(pdf_resp.content)
+            except Exception as exc:
+                logger.warning("Skanska: zlyhalo stiahnutie/spracovanie PDF pôdorysu pre %s (%s)", detail_url, exc)
+                rooms = []
+            if rooms:
+                result["rooms"] = rooms
+                outdoor_area_m2, outdoor_area_by_type = _split_outdoor_rooms(rooms)
+                if outdoor_area_m2 is not None:
+                    result["outdoor_area_m2"] = outdoor_area_m2
+                    result["outdoor_area_by_type"] = outdoor_area_by_type
+
         return result
 
     def needs_extra_details(self, record) -> bool:
-        return record.usable_area_m2 is None or not record.orientation
+        return record.usable_area_m2 is None or not record.orientation or not record.rooms
 
 
 if __name__ == "__main__":

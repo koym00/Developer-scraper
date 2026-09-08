@@ -210,16 +210,31 @@ class FinepScraper(BaseScraper):
 
     def _discover_locality(self, project_url: str) -> str | None:
         """Lokalita (mestský obvod) je len na vlastnej stránke projektu, nie
-        na /cenik ani na karte bytu - 1 request navyše na projekt (nie na byt)."""
+        na /cenik ani na karte bytu - 1 request navyše na projekt (nie na byt).
+
+        Hlavný zdroj je odkaz na `a[href*='developerske-projekty-praha-']`,
+        ale niektoré projekty (naživo overené: "Rezidence U Šárky IX"/"X")
+        ho na svojej stránke nemajú. **Predtým sa pre tieto projekty vracalo
+        None** - naživo sa ale zistilo (2026-09, na podnet používateľa, ktorý
+        spochybnil, že dáta tam fakt nie sú), že `<title>` stránky má
+        konzistentne tvar "... na Praze <N> ..." aj u projektov, ktoré majú
+        aj hlavný odkaz aj u tých, čo ho nemajú - preto sa skúša ako fallback,
+        keď hlavný selektor zlyhá."""
         try:
             resp = self._get(project_url)
         except Exception as exc:
             logger.warning("Finep: zlyhalo stiahnutie %s pri zisťovaní lokality (%s)", project_url, exc)
             return None
-        link = BeautifulSoup(resp.text, "lxml").select_one("a[href*='developerske-projekty-praha-']")
-        if link is None:
-            return None
-        return link.get_text(strip=True) or None
+        soup = BeautifulSoup(resp.text, "lxml")
+        link = soup.select_one("a[href*='developerske-projekty-praha-']")
+        if link is not None:
+            return link.get_text(strip=True) or None
+
+        title = soup.title.get_text(strip=True) if soup.title else ""
+        match = re.search(r"[Pp]raz[eě]\s*(\d{1,2})\b", title)
+        if match:
+            return f"Praha {match.group(1)}"
+        return None
 
     def _fetch_cenik_page(self, cenik_url: str, page: int) -> BeautifulSoup | None:
         url = cenik_url if page == 1 else f"{cenik_url}?page={page}"
