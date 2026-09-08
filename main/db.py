@@ -7,6 +7,7 @@ jednotky + históriu cien, aby sme:
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 from sqlalchemy import (
@@ -21,7 +22,15 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-DATABASE_URL = "sqlite:///./byty.db"
+# CodeNow kontajner nemá zapisovateľný adresár appky (relatívna cesta
+# "./byty.db" tam zlyháva) - jediný zapisovateľný priečinok je "/tmp".
+# Preto sa cesta dá prepísať cez env premennú (nastaviteľnú v CodeNow UI,
+# viď pravidlo 3 z architektúry projektu - "secrets/config nikdy natvrdo
+# v kóde"), s fallbackom na pôvodné lokálne správanie, keď premenná
+# nie je nastavená. POZOR: "/tmp" je na väčšine kontajnerových platforiem
+# efemérne úložisko - dáta (cache aj história cien) sa strácajú pri
+# každom reštarte/redeployi appky.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./byty.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
