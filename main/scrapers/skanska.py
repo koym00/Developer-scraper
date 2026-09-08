@@ -126,13 +126,19 @@ def _looks_like_real_room(name: str) -> bool:
 def _extract_rooms_from_pdf(pdf_bytes: bytes) -> list[dict]:
     """Vytiahne rozpis miestností (názov + plocha) z textovej vrstvy PDF
     "Tisknout do PDF" - viď docstring modulu, prečo sa nepoužíva súhrnný
-    riadok hore, ale rozpis jednotlivých miestností."""
-    try:
-        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-        text = reader.pages[0].extract_text() or ""
-    except Exception as exc:
-        logger.warning("Skanska: nepodarilo sa prečítať PDF pôdorysu (%s)", exc)
-        return []
+    riadok hore, ale rozpis jednotlivých miestností.
+
+    **Vyhadzuje výnimku**, ak sa PDF nepodarí načítať (poškodený/neplatný
+    súbor) - volajúci (`fetch_extra_details_for_unit`) to zámerne odlišuje
+    od "PDF sa načítalo v poriadku, ale neobsahuje žiadny text" (vráti sa
+    prázdny zoznam BEZ výnimky) - naživo sa zistilo (2026-09), že niektoré
+    byty (naživo overené: ~11 % v projekte "Modřanský cukrovar 3") majú
+    "Tisknout do PDF" vygenerované ako čistý obrázok bez textovej vrstvy
+    (žiadne fonty, len 2 rastrové XObjecty) - to je TRVALÝ stav (skús
+    znova nič nezmení), na rozdiel od zlyhaného stiahnutia/poškodeného
+    súboru (tam sa oplatí skúsiť znova pri ďalšom vyhľadaní)."""
+    reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+    text = reader.pages[0].extract_text() or ""
 
     rooms: list[dict] = []
     for raw_name, raw_value in _ROOM_AREA_RE.findall(text):
@@ -303,19 +309,31 @@ class SkanskaScraper(BaseScraper):
                 pdf_resp = self._get(pdf_link["href"])
                 rooms = _extract_rooms_from_pdf(pdf_resp.content)
             except Exception as exc:
+                # zlyhanie stiahnutia/parsovania PDF - môže byť prechodné
+                # (výpadok siete, dočasne poškodený prenos), preto sa
+                # NEnastavuje `rooms_unavailable` - skús pri ďalšom
+                # vyhľadaní znova.
                 logger.warning("Skanska: zlyhalo stiahnutie/spracovanie PDF pôdorysu pre %s (%s)", detail_url, exc)
-                rooms = []
+                rooms = None
             if rooms:
                 result["rooms"] = rooms
                 outdoor_area_m2, outdoor_area_by_type = _split_outdoor_rooms(rooms)
                 if outdoor_area_m2 is not None:
                     result["outdoor_area_m2"] = outdoor_area_m2
                     result["outdoor_area_by_type"] = outdoor_area_by_type
+            elif rooms is not None:
+                # PDF sa stiahlo a spracovalo v poriadku, ale neobsahuje
+                # žiadny text (napr. čisto obrázkové PDF bez fontov - naživo
+                # overené ~11 % bytov v projekte "Modřanský cukrovar 3") -
+                # trvalý stav, appka to nemá skúšať znova pri každom
+                # ďalšom vyhľadaní tohto bytu (viď needs_extra_details).
+                result["rooms_unavailable"] = True
 
         return result
 
     def needs_extra_details(self, record) -> bool:
-        return record.usable_area_m2 is None or not record.orientation or not record.rooms
+        missing_rooms = not record.rooms and not getattr(record, "rooms_unavailable", False)
+        return record.usable_area_m2 is None or not record.orientation or missing_rooms
 
 
 if __name__ == "__main__":

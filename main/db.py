@@ -53,6 +53,12 @@ class UnitRecord(Base):
     outdoor_area_m2: Mapped[float | None] = mapped_column(Float, nullable=True)
     outdoor_area_by_type: Mapped[dict] = mapped_column(JSON, default=dict)
     rooms: Mapped[list] = mapped_column(JSON, default=list)
+    # Interný príznak (nie je súčasťou verejného API) - rozlišuje "ešte sa
+    # nepodarilo dotiahnuť rozpis miestností" (skús znova) od "skúsilo sa
+    # to, zdroj (napr. PDF pôdorysu bez textovej vrstvy) ho ale trvalo
+    # neposkytuje" (netreba skúšať znova pri každom ďalšom vyhľadaní).
+    # Doplnené 2026-09 pre Skanska (viď skanska.py, needs_extra_details).
+    rooms_unavailable: Mapped[bool] = mapped_column(Boolean, default=False)
     usable_area_m2: Mapped[float | None] = mapped_column(Float, nullable=True)
     features: Mapped[list] = mapped_column(JSON, default=list)
     orientation: Mapped[str | None] = mapped_column(String, nullable=True)
